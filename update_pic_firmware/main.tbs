@@ -1,0 +1,44 @@
+include "global.tbh"
+
+const CR_LF=chr(10)+chr(13)
+
+const FW_FILE="GRA_V00_06.hex"
+const FW_VER="GRA V00.06"
+
+'====================================================================
+sub on_sys_init()
+	dim state as icsp_status
+
+while 1
+	sys.debugprint("Attempting to update the firmware of Tibbit #31..."+CR_LF)
+
+#if PLATFORM_ID=EM1000W or PLATFORM_ID=EM1000
+	state=iscp_download_hex(FW_FILE,FW_VER,EM1000_LEV,ICSP_DEVICE_DEFAULT)
+#else
+	state=iscp_download_hex(FW_FILE,FW_VER,IS_3,ICSP_DEVICE_DEFAULT)
+#endif
+	select case state
+	case IS_SLOT_ERR:
+		sys.debugprint("Invalid Tibbit socket specified"+CR_LF)
+
+	case IS_CANNOT_FOUND_FW_FILE:
+		sys.debugprint("Firmware file not found. Please add the firmware file to this project."+CR_LF)
+
+	case IS_DEV_ID_ERR:
+		sys.debugprint("PIC device ID incorrect or device not found"+CR_LF)
+
+	case IS_DATA_CHECK_ERR:
+		sys.debugprint("PIC firmware upload failed"+CR_LF)
+
+	case IS_UPLOAD_TEST_FAIL:
+		sys.debugprint("Uploaded firmware file produces returns incorrect firmware version string"+CR_LF)
+
+	case IS_UPLOAD_OK:
+		sys.debugprint("Firmware updated successfully"+CR_LF)
+
+	case IS_UPLOAD_UNKNOWN:
+		sys.debugprint("Unknow error"+CR_LF)
+
+	end select
+wend
+end sub

@@ -1,0 +1,52 @@
+'DEFINES-------------------------------------------------------------
+#IF PLATFORM_ID=TPP2WG2 OR PLATFORM_ID=TPP3WG2 OR PLATFORM_ID=TPP2G2 OR PLATFORM_ID=TPP3G2
+	#define PLATFORM_TYPE_32 1
+#endif
+
+#ifndef USR_SCL
+	#define USR_SCL PL_IO_NULL
+#endif
+
+#ifndef USR_SDA
+	#define USR_SDA PL_IO_NULL
+#endif
+
+#ifndef USR_MCLR
+	#define USR_MCLR PL_IO_NULL
+#endif
+
+enum icsp_status
+	IS_SLOT_ERR
+	IS_CANNOT_FOUND_FW_FILE
+	IS_FW_FILE_FORMAT_ERR
+	IS_DEV_ID_ERR
+	IS_DATA_CHECK_ERR
+	IS_UPLOAD_OK
+	IS_UPLOAD_TEST_FAIL
+	IS_UPLOAD_UNKNOWN
+end enum
+
+enum tibbit_sockets
+	IS_1
+	IS_3
+	IS_5
+	IS_7
+	IS_9
+	IS_11
+	IS_13
+	IS_15
+	IS_17
+	IS_19
+	IS_21
+	EM1000_LEV
+	USER_DEF
+end enum
+
+enum icsp_device
+	ICSP_DEVICE_DEFAULT,	'Select this for Tibbits ##16, 17, 31, as well as the EM1000LEV board.
+	ICSP_DEVICE_TIBBIT_26	'Select this for Tibbit #26
+end enum
+
+'DECLARATIONS--------------------------------------------------------
+
+declare function iscp_download_hex(fw as string,version as string,socket as tibbit_sockets,dev_type as icsp_device)as icsp_status
