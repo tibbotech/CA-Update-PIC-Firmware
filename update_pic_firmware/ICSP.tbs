@@ -1,8 +1,10 @@
 include "global.tbh"
 '====================================================================
+const ICSP_INIT_SIGNATURE=&hDDCA
 const ICSP_STAMP="ICSP> "
 const ICSP_CR_LF=chr(13)+chr(10)
-const INTERNAL_PROG_WAIT=6
+
+const USER_ID="00112233445566"  'not ready
 
 enum hex_record_type
 	RECORD_DATA=&h00,
@@ -46,19 +48,16 @@ declare function icsp_program_read()as string
 
 declare sub icsp_cmd_send(cmd as icsp_cmd)
 declare sub icsp_program_send(data as string)
-
 declare sub icsp_delay_in_ms(value as word)
 
 declare sub icsp_configure_init()
 
-declare function icsp_test(data as string,dev_type as icsp_device)as ok_ng
-
+declare function test()as ok_ng
 dim dev_id as string
-dim icsp_sda,icsp_scl,icsp_mclr as pl_io_num
-dim i2c_num as byte
+dim icsp_init_flag as word
 
 sub icsp_cmd_send(cmd as icsp_cmd)
-	dim value,base,x,delay as byte
+	dim value,base,x as byte
 
 	select case cmd 
 	case cmd_load_config:
@@ -108,34 +107,29 @@ sub icsp_cmd_send(cmd as icsp_cmd)
 
 	for x=0 to 5
 		if value and base then
-			io_control(icsp_scl,LOW)
-			io_control(icsp_sda,HIGH)
-			io_control(icsp_scl,HIGH)
+			io_control(ICSPCLK,LOW)
+			io_control(ICSPDAT,HIGH)
+			io_control(ICSPCLK,HIGH)
 		else
-			io_control(icsp_scl,LOW)
-			io_control(icsp_sda,LOW)
-			io_control(icsp_scl,HIGH)
+			io_control(ICSPCLK,LOW)
+			io_control(ICSPDAT,LOW)
+			io_control(ICSPCLK,HIGH)
 		end if
 		base=base*2
 	next x
 
-	io_control(icsp_scl,LOW)
-
-#if PLATFORM_TYPE_32
-	for delay=0 to 10
-	next delay
-#endif
+	io_control(ICSPCLK,LOW)
 
 	select case cmd
 	case cmd_read_prg_mem,cmd_read_dat_mem:
-		io.num=icsp_sda
+		io.num=ICSPDAT
 		io.enabled=NO	
 	end select
 end sub
 
 sub icsp_program_send(data as string)
 	'digit order :2->1 -> 4->3
-	dim value1,value2,value3,value4,base,x,delay as byte
+	dim value1,value2,value3,value4,base,x as byte
 	dim s as string(1)
 
 	s=mid(data,1,1)
@@ -153,62 +147,66 @@ sub icsp_program_send(data as string)
 	icsp_cmd_send(cmd_load_prg_mem)
 
 	'Start Bit
-	io_control(icsp_sda,LOW)
-	io_control(icsp_scl,HIGH)
-	io_control(icsp_scl,LOW)
+	io_control(ICSPDAT,LOW)
+	io_control(ICSPCLK,HIGH)
+	io_control(ICSPCLK,LOW)
 
 	base=&h01
 	for x=0 to 3
 		if value2 and base then
-			io_control(icsp_sda,HIGH)
+			io_control(ICSPDAT,HIGH)
 		else
-			io_control(icsp_sda,LOW)
+			io_control(ICSPDAT,LOW)
 		end if
-		io_control(icsp_scl,HIGH)
-		io_control(icsp_scl,LOW)
+		io_control(ICSPCLK,HIGH)
+		io_control(ICSPCLK,LOW)
 		base=base*2
 	next x
 
 	base=&h01
 	for x=0 to 3
 		if value1 and base then
-			io_control(icsp_sda,HIGH)
+			io_control(ICSPDAT,HIGH)
 		else
-			io_control(icsp_sda,LOW)
+			io_control(ICSPDAT,LOW)
 		end if
-		io_control(icsp_scl,HIGH)
-		io_control(icsp_scl,LOW)
+		io_control(ICSPCLK,HIGH)
+		io_control(ICSPCLK,LOW)
 		base=base*2
 	next x
 
 	base=&h01
 	for x=0 to 3
 		if value4 and base then
-			io_control(icsp_sda,HIGH)
+			io_control(ICSPDAT,HIGH)
 		else
-			io_control(icsp_sda,LOW)
+			io_control(ICSPDAT,LOW)
 		end if
-		io_control(icsp_scl,HIGH)
-		io_control(icsp_scl,LOW)
+		io_control(ICSPCLK,HIGH)
+		io_control(ICSPCLK,LOW)
 		base=base*2
 	next x
 
 	base=&h01
 	for x=0 to 1
 		if value3 and base then
-			io_control(icsp_sda,HIGH)
+			io_control(ICSPDAT,HIGH)
 		else
-			io_control(icsp_sda,LOW)
+			io_control(ICSPDAT,LOW)
 		end if
-		io_control(icsp_scl,HIGH)
-		io_control(icsp_scl,LOW)
+		io_control(ICSPCLK,HIGH)
+		io_control(ICSPCLK,LOW)
 		base=base*2
 	next x
 
 	'Stop Bit
-	io_control(icsp_sda,LOW)
-	io_control(icsp_scl,HIGH)
-	io_control(icsp_scl,LOW)
+	io_control(ICSPDAT,LOW)
+	io_control(ICSPCLK,HIGH)
+	io_control(ICSPCLK,LOW)
+end sub
+
+sub icsp_init()
+	icsp_init_flag=ICSP_INIT_SIGNATURE
 end sub
 
 sub io_control(pin as pl_io_num,state as low_high)
@@ -230,25 +228,25 @@ sub icsp_entry_write(data as byte)
 	dim flag as no_yes=NO
 
 	compval = &h80
-	io_control(icsp_scl,LOW)
+	io_control(ICSPCLK,LOW)
 	for bitCnt = 0 to 7 step 1	
 		BitData = data AND compval
 		compval = compval / 2
 
 		if(BitData) then 
 			if flag=NO then
-				io_control(icsp_sda,HIGH)
+				io_control(ICSPDAT,HIGH)				'Bit is 1
 				flag=YES
 			else
 				flag=YES
 			end if
 		else
-			io_control(icsp_sda,LOW)
+			io_control(ICSPDAT,LOW)					'Bit is 0
 			flag=NO
 		end if
 
-		io_control(icsp_scl,HIGH)
-		io_control(icsp_scl,LOW)
+		io_control(ICSPCLK,HIGH)
+		io_control(ICSPCLK,LOW)
 	next bitCnt
 end sub
 
@@ -257,58 +255,33 @@ sub enter_lvp_mode()
 		icsp_debug_print("Enter Low Voltage Programing Mode")
 	#endif	
 	'Enter Programming Mode
-	io_control(icsp_scl,LOW)
-	io_control(icsp_sda,LOW)
-	io_control(icsp_mclr,LOW)
+	io_control(ICSPCLK,LOW)
+	io_control(ICSPDAT,LOW)
+	io_control(MCLR,LOW)
 
-#if PLATFORM_TYPE_32
-	icsp_delay_in_ms(1)
-#else
 	icsp_delay_in_ms(10)
-#endif
-
-	io_control(icsp_mclr,HIGH)
-#if PLATFORM_TYPE_32
-	icsp_delay_in_ms(1)
-#else
+	io_control(MCLR,HIGH)
 	icsp_delay_in_ms(10)
-#endif
-	io_control(icsp_mclr,LOW)
-#if PLATFORM_TYPE_32
-	icsp_delay_in_ms(1)
-#else
+	io_control(MCLR,LOW)
 	icsp_delay_in_ms(2)
-#endif
  
-	'Send ASCII (icsp_mclr) 
+	'Send ASCII (MCLR) 
 	icsp_entry_write(&b00001010)
 	icsp_entry_write(&b00010010)
 	icsp_entry_write(&b11000010)
 	icsp_entry_write(&b10110010)
-	io_control(icsp_scl,HIGH)
-	io_control(icsp_scl,LOW)
-#if PLATFORM_TYPE_32
-	icsp_delay_in_ms(2)
-#else
-	icsp_delay_in_ms(20)
-#endif	
+	io_control(ICSPCLK,HIGH)
+	io_control(ICSPCLK,LOW)
+	icsp_delay_in_ms(20)	
 end sub
 
 sub leave_lvp_mode()
 	'Leave Programming Mode
-	io_control(icsp_scl,HIGH)
-	io_control(icsp_sda,HIGH)
-#if PLATFORM_TYPE_32
+	io_control(ICSPCLK,HIGH)
+	io_control(ICSPDAT,HIGH)
 	icsp_delay_in_ms(1)
-#else
-	icsp_delay_in_ms(1)
-#endif
-	io_control(icsp_mclr,HIGH)
-#if PLATFORM_TYPE_32
-	icsp_delay_in_ms(1)
-#else
+	io_control(MCLR,HIGH)
 	icsp_delay_in_ms(5)
-#endif
 	#if ICSP_DEBUG_PRINT=1
 		icsp_debug_print("Leave Low Voltage Programing Mode")
 	#endif	
@@ -323,35 +296,35 @@ function icsp_normal_read()as word
 	bitCmp=2
 	tmp=0
 	'start bit
-	io_control(icsp_scl,LOW)
-	io_control(icsp_sda,LOW)
-	io_control(icsp_scl,HIGH)
-	io_control(icsp_scl,LOW)
+	io_control(ICSPCLK,LOW)
+	io_control(ICSPDAT,LOW)
+	io_control(ICSPCLK,HIGH)
+	io_control(ICSPCLK,LOW)
 
-	io.num=icsp_sda
+	io.num=ICSPDAT
 	io.enabled=NO
 
 	'lsb  8 bit
 	for x=0 to 13
-		io_control(icsp_scl,HIGH)
-		if io.lineget(icsp_sda)=HIGH then
+		io_control(ICSPCLK,HIGH)
+		if io.lineget(ICSPDAT)=HIGH then
 			tmp=tmp or bitCmp
 		end if
-		io_control(icsp_scl,LOW)
+		io_control(ICSPCLK,LOW)
 		bitCmp=bitCmp*2
 	next x
 
 	'stop bit
-	io_control(icsp_scl,LOW)
-	io_control(icsp_sda,LOW)
-	io_control(icsp_scl,HIGH)
-	io_control(icsp_scl,LOW)
+	io_control(ICSPCLK,LOW)
+	io_control(ICSPDAT,LOW)
+	io_control(ICSPCLK,HIGH)
+	io_control(ICSPCLK,LOW)
 
 	icsp_normal_read=tmp
 end function
 
 function icsp_program_read()as string
-	dim value1,value2,value3,value4,delay as byte
+	dim value1,value2,value3,value4 as byte
 	dim x,bitCmp as byte
 
 	icsp_program_read=""
@@ -364,24 +337,19 @@ function icsp_program_read()as string
 	value4=0
 
 	'start bit
-	io_control(icsp_scl,LOW)
-	io_control(icsp_sda,LOW)
-	io_control(icsp_scl,HIGH)
-	io_control(icsp_scl,LOW)
+	io_control(ICSPCLK,LOW)
+	io_control(ICSPDAT,LOW)
+	io_control(ICSPCLK,HIGH)
+	io_control(ICSPCLK,LOW)
 
-#if PLATFORM_TYPE_32
-	for delay=0 to 2
-	next delay
-#endif
-
-	io.num=icsp_sda
+	io.num=ICSPDAT
 	io.enabled=NO
 
 	bitCmp=1
 	for x=0 to 3
-		io_control(icsp_scl,HIGH)
-		io_control(icsp_scl,LOW)
-		if io.lineget(icsp_sda)=HIGH then
+		io_control(ICSPCLK,HIGH)
+		io_control(ICSPCLK,LOW)
+		if io.lineget(ICSPDAT)=HIGH then
 			value1=value1 or bitCmp
 		end if
 		bitCmp=bitCmp*2
@@ -389,9 +357,9 @@ function icsp_program_read()as string
 
 	bitCmp=1
 	for x=0 to 3
-		io_control(icsp_scl,HIGH)
-		io_control(icsp_scl,LOW)
-		if io.lineget(icsp_sda)=HIGH then
+		io_control(ICSPCLK,HIGH)
+		io_control(ICSPCLK,LOW)
+		if io.lineget(ICSPDAT)=HIGH then
 			value2=value2 or bitCmp
 		end if
 		bitCmp=bitCmp*2
@@ -399,9 +367,9 @@ function icsp_program_read()as string
 
 	bitCmp=1
 	for x=0 to 3
-		io_control(icsp_scl,HIGH)
-		io_control(icsp_scl,LOW)
-		if io.lineget(icsp_sda)=HIGH then
+		io_control(ICSPCLK,HIGH)
+		io_control(ICSPCLK,LOW)
+		if io.lineget(ICSPDAT)=HIGH then
 			value3=value3 or bitCmp
 		end if
 		bitCmp=bitCmp*2
@@ -409,19 +377,19 @@ function icsp_program_read()as string
 
 	bitCmp=1
 	for x=0 to 1
-		io_control(icsp_scl,HIGH)
-		io_control(icsp_scl,LOW)
-		if io.lineget(icsp_sda)=HIGH then
+		io_control(ICSPCLK,HIGH)
+		io_control(ICSPCLK,LOW)
+		if io.lineget(ICSPDAT)=HIGH then
 			value4=value4 or bitCmp
 		end if
 		bitCmp=bitCmp*2
 	next x
 
 	'stop bit
-	io_control(icsp_scl,LOW)
-	io_control(icsp_sda,LOW)
-	io_control(icsp_scl,HIGH)
-	io_control(icsp_scl,LOW)
+	io_control(ICSPCLK,LOW)
+	io_control(ICSPDAT,LOW)
+	io_control(ICSPCLK,HIGH)
+	io_control(ICSPCLK,LOW)
 
 	dim tmp as word
 	dim result as string
@@ -436,170 +404,29 @@ function icsp_program_read()as string
 	icsp_cmd_send(cmd_increment_addr)
 end function
 
-function iscp_download_hex(fw as string,version as string,socket as tibbit_sockets,dev_type as icsp_device)as icsp_status
+function iscp_download_hex()as icsp_status
 	dim tmr,tmp as word
 	dim addr,lastcount,lastaddr,pcaddr as word
 	dim recType,lastType as hex_record_type
 	dim byteCount,fchecksum,sendCount,pending as byte
 	dim buff as string
 	dim s,ss as string
-	dim datadone,check as no_yes
+	dim datadone as no_yes
 
-	dim i,j,k as pl_io_num
-
-	select case socket
-	case IS_1:
-		#if PLATFORM_ID=TPP3W or PLATFORM_ID=TPP3WG2
-			icsp_scl=PL_IO_NUM_9_TX0
-			icsp_sda=PL_IO_NUM_8_RX0
-			icsp_mclr=PL_IO_NUM_0
-		#elif PLATFORM_ID=TPP2W or PLATFORM_ID=TPP2WG2
-			icsp_scl=PL_IO_NUM_9_TX0
-			icsp_sda=PL_IO_NUM_8_RX0
-			icsp_mclr=PL_IO_NUM_0
-		#endif
-
-	case IS_3:
-		#if PLATFORM_ID=TPP3W or PLATFORM_ID=TPP3WG2
-			icsp_scl=PL_IO_NUM_32
-			icsp_sda=PL_IO_NUM_33
-			icsp_mclr=PL_IO_NUM_4
-		#elif PLATFORM_ID=TPP2W or PLATFORM_ID=TPP2WG2
-			icsp_scl=PL_IO_NUM_11_TX1
-			icsp_sda=PL_IO_NUM_10_RX1
-			icsp_mclr=PL_IO_NUM_1
-		#endif
-
-	case IS_5:
-		#if PLATFORM_ID=TPP3W or PLATFORM_ID=TPP3WG2
-			icsp_scl=PL_IO_NUM_11_TX1
-			icsp_sda=PL_IO_NUM_10_RX1
-			icsp_mclr=PL_IO_NUM_1
-		#elif PLATFORM_ID=TPP2W or PLATFORM_ID=TPP2WG2
-			icsp_scl=PL_IO_NUM_13_TX2
-			icsp_sda=PL_IO_NUM_12_RX2
-			icsp_mclr=PL_IO_NUM_2
-		#endif
-
-	case IS_7:
-		#if PLATFORM_ID=TPP3W or PLATFORM_ID=TPP3WG2
-			icsp_scl=PL_IO_NUM_34
-			icsp_sda=PL_IO_NUM_35
-			icsp_mclr=PL_IO_NUM_5
-		#elif PLATFORM_ID=TPP2W or PLATFORM_ID=TPP2WG2
-			icsp_scl=PL_IO_NUM_15_TX3
-			icsp_sda=PL_IO_NUM_14_RX3
-			icsp_mclr=PL_IO_NUM_3
-		#endif
-
-	case IS_9:
-		#if PLATFORM_ID=TPP3W or PLATFORM_ID=TPP3WG2
-			icsp_scl=PL_IO_NUM_13_TX2
-			icsp_sda=PL_IO_NUM_12_RX2
-			icsp_mclr=PL_IO_NUM_2
-		#elif PLATFORM_ID=TPP2W or PLATFORM_ID=TPP2WG2
-			icsp_scl=PL_IO_NUM_32
-			icsp_sda=PL_IO_NUM_33
-			icsp_mclr=PL_IO_NUM_4
-		#endif
-
-	case IS_11:
-		#if PLATFORM_ID=TPP3W or PLATFORM_ID=TPP3WG2
-			icsp_scl=PL_IO_NUM_36
-			icsp_sda=PL_IO_NUM_37
-			icsp_mclr=PL_IO_NUM_6
-		#elif PLATFORM_ID=TPP2W or PLATFORM_ID=TPP2WG2
-			icsp_scl=PL_IO_NUM_34
-			icsp_sda=PL_IO_NUM_35
-			icsp_mclr=PL_IO_NUM_5
-		#endif
-
-	case IS_13:
-		#if PLATFORM_ID=TPP3W or PLATFORM_ID=TPP3WG2
-			icsp_scl=PL_IO_NUM_15_TX3
-			icsp_sda=PL_IO_NUM_14_RX3
-			icsp_mclr=PL_IO_NUM_3
-		#elif PLATFORM_ID=TPP2W or PLATFORM_ID=TPP2WG2
-			iscp_download_hex=IS_SLOT_ERR
-			exit function
-		#endif
-
-	case IS_15:
-		#if PLATFORM_ID=TPP3W or PLATFORM_ID=TPP3WG2
-			icsp_scl=PL_IO_NUM_38
-			icsp_sda=PL_IO_NUM_39
-			icsp_mclr=PL_IO_NUM_7
-		#elif PLATFORM_ID=TPP2W or PLATFORM_ID=TPP2WG2
-			iscp_download_hex=IS_SLOT_ERR
-			exit function
-		#endif
-
-	case IS_17:
-		#if PLATFORM_ID=TPP3W or PLATFORM_ID=TPP3WG2
-			icsp_scl=PL_IO_NUM_24
-			icsp_sda=PL_IO_NUM_25
-			icsp_mclr=PL_IO_NUM_26
-		#elif PLATFORM_ID=TPP2W or PLATFORM_ID=TPP2WG2
-			iscp_download_hex=IS_SLOT_ERR
-			exit function
-		#endif
-
-	case IS_19:
-		#if PLATFORM_ID=TPP3W or PLATFORM_ID=TPP3WG2
-			icsp_scl=PL_IO_NUM_28
-			icsp_sda=PL_IO_NUM_29
-			icsp_mclr=PL_IO_NUM_30
-		#elif PLATFORM_ID=TPP2W or PLATFORM_ID=TPP2WG2
-			iscp_download_hex=IS_SLOT_ERR
-			exit function
-		#endif
-
-	case IS_21:
-		#if PLATFORM_ID=TPP3W or PLATFORM_ID=TPP3WG2
-			icsp_scl=PL_IO_NUM_40
-			icsp_sda=PL_IO_NUM_41
-			icsp_mclr=PL_IO_NUM_42
-		#elif PLATFORM_ID=TPP2W or PLATFORM_ID=TPP2WG2
-			iscp_download_hex=IS_SLOT_ERR
-			exit function
-		#endif
-
-	case EM1000_LEV:
-		#if PLATFORM_ID=EM1000W or PLATFORM_ID=EM1000
-			icsp_scl=PL_IO_NUM_39
-			icsp_sda=PL_IO_NUM_37
-			icsp_mclr=PL_IO_NUM_48
-		#else
-			sys.halt()
-			'Please check your platform, only for EM1000_LEV.
-		#endif
-
-	case USER_DEF:
-		icsp_scl=USR_SCL
-		icsp_sda=USR_SDA
-		icsp_mclr=USR_MCLR
-
-	end select
-
-	check=NO
 	datadone=NO
 	iscp_download_hex=IS_UPLOAD_UNKNOWN
 
-	romfile.open(fw)
+	romfile.open(FW_FILE)
 	romfile.pointer=1
 	if romfile.size=0 then
 		#if ICSP_DEBUG_PRINT=1
 			icsp_debug_print("CANNOT FOUND THE FW")
 		#endif
 		iscp_download_hex=IS_CANNOT_FOUND_FW_FILE
-		goto leave_without_test
+		goto leave
 	end if
 
 	icsp_configure_init()
-
-#if PLATFORM_TYPE_32
-	icsp_delay_in_ms(1)
-#endif
 
 	enter_lvp_mode()
 
@@ -640,25 +467,14 @@ function iscp_download_hex(fw as string,version as string,socket as tibbit_socke
 			icsp_debug_print("dev id incoreect !")
 		#endif
 		iscp_download_hex=IS_DEV_ID_ERR
-		goto leave_without_test
+		goto leave
 	end if
 
 	leave_lvp_mode()
 
-#if PLATFORM_TYPE_32
-	icsp_delay_in_ms(2)
-#else
 	icsp_delay_in_ms(10)
-#endif
-
 	enter_lvp_mode()
-
-#if PLATFORM_TYPE_32
-	icsp_delay_in_ms(2)
-#else
-	icsp_delay_in_ms(2)
-#endif
-
+	icsp_delay_in_ms(10)
 	icsp_program_send("FF3F")
 	pcaddr=0
 	lastaddr=0
@@ -679,7 +495,7 @@ function iscp_download_hex(fw as string,version as string,socket as tibbit_socke
 						icsp_debug_print("FORMAT ERR")
 					#endif
 					iscp_download_hex=IS_FW_FILE_FORMAT_ERR
-					goto leave_without_test
+					goto leave
 				end if
 				exit while
 			end if
@@ -687,208 +503,186 @@ function iscp_download_hex(fw as string,version as string,socket as tibbit_socke
 
 		select case recType
 		case RECORD_DATA:
-			if check=NO then
-				while lastcount+lastaddr<addr
-					icsp_program_send("FF3F")
-					icsp_cmd_send(cmd_increment_addr)
-					pcaddr=pcaddr+1
-					lastcount=lastcount+2
-				wend
-
-				if byteCount =2 then
-					s=mid(buff,1,4)
-					icsp_program_send(s)
-					pcaddr=pcaddr+1
-					if pcaddr mod 32 =0 then
-						'allow to write the program words
-						icsp_cmd_send(cmd_begin_inter_prg)
-						#if PLATFORM_TYPE_32
-							icsp_delay_in_ms(1)
-						#else
-							icsp_delay_in_ms(INTERNAL_PROG_WAIT)
-						#endif
-					end if
-					icsp_cmd_send(cmd_increment_addr)
-				else
-					s=mid(buff,1,4)
-					for sendCount= 5 to (byteCount+1)*2 step 4
-						icsp_program_send(s)
-						pcaddr=pcaddr+1
-						if pcaddr mod 32 =0 then
-							'allow to write the program words
-							icsp_cmd_send(cmd_begin_inter_prg)
-							#if PLATFORM_TYPE_32
-								icsp_delay_in_ms(1)
-							#else
-								icsp_delay_in_ms(INTERNAL_PROG_WAIT)
-							#endif
-						end if
-						icsp_cmd_send(cmd_increment_addr)
-						s=mid(buff,sendCount,4)
-					next sendCount
-				end if
-				lastaddr=addr
-				lastcount=byteCount
-				lastType=recType
-			else
-				if datadone=YES then  'Configuration Bit
-					icsp_program_send(buff)
-					icsp_cmd_send(cmd_begin_inter_prg)
-					#if PLATFORM_TYPE_32
-						icsp_delay_in_ms(1)
-					#else
-						icsp_delay_in_ms(INTERNAL_PROG_WAIT)
-					#endif
-					icsp_cmd_send(cmd_increment_addr)
-					goto header_extract
-				end if
-				while lastcount+lastaddr<addr
-					ss=icsp_program_read()
-					pcaddr=pcaddr+1
-					lastcount=lastcount+2
-					if ss<>"FF3F" then
-						#if ICSP_DEBUG_PRINT=1
-							icsp_debug_print("DATA CHECK ERR.")
-						#endif
-						iscp_download_hex=IS_DATA_CHECK_ERR
-						goto leave_without_test
-					end if
-				wend
-				for sendCount= 1 to byteCount*2 step 4
-					s=mid(buff,sendCount,4)
-					ss=icsp_program_read()
-					pcaddr=pcaddr+1
-					#if ICSP_DEBUG_PRINT=1
-						icsp_debug_print(ss+"/"+s)
-					#endif
-					if ss<>s then
-						#if ICSP_DEBUG_PRINT=1
-							icsp_debug_print("DATA CHECK ERR.")
-						#endif
-						iscp_download_hex=IS_DATA_CHECK_ERR
-						goto leave_without_test
-					end if
-				next sendCount
-
-				lastaddr=addr
-				lastcount=byteCount
-				lastType=recType
+			if datadone=YES then  'Configuration Bit
+				icsp_program_send(buff)
+				icsp_cmd_send(cmd_begin_inter_prg)
+				icsp_delay_in_ms(3)
+				icsp_cmd_send(cmd_increment_addr)
+				goto header_extract
 			end if
 
+			while lastcount+lastaddr<addr
+				icsp_program_send("FF3F")
+				icsp_cmd_send(cmd_increment_addr)
+				pcaddr=pcaddr+1
+				lastcount=lastcount+2
+			wend
+
+			s=mid(buff,1,4)
+			for sendCount= 5 to (byteCount+1)*2 step 4
+				icsp_program_send(s)
+				pcaddr=pcaddr+1
+				if pcaddr mod 32 =0 then
+					'allow to write the program words
+					icsp_cmd_send(cmd_begin_inter_prg)
+					icsp_delay_in_ms(3)
+				end if
+				icsp_cmd_send(cmd_increment_addr)
+				s=mid(buff,sendCount,4)
+			next sendCount
+			lastaddr=addr
+			lastcount=byteCount
+			lastType=recType
+
 		case RECORD_EXTENDED_LINEAR_ADDR_REC:
-			if check=NO then
-				if buff="0001" and lastType=RECORD_DATA then
-					while  pcaddr mod 32<>0
-						icsp_program_send("FF3F")
-						pcaddr=pcaddr+1
-						if pcaddr mod 32=0 then
-							icsp_cmd_send(cmd_begin_inter_prg)
-							#if PLATFORM_TYPE_32
-								icsp_delay_in_ms(1)
-							#else
-								icsp_delay_in_ms(INTERNAL_PROG_WAIT)
-							#endif
-							exit while
-						end if
-						icsp_cmd_send(cmd_increment_addr)
-					wend
-
-					pcaddr=0
-					lastaddr=0
-					lastcount=0
-					icsp_cmd_send(cmd_reset_addr)
-					romfile.pointer=1
-					check=YES
-					#if ICSP_DEBUG_PRINT=1
-						icsp_debug_print("Verify Program Memory")
-					#endif
-				end if
-			else
-				if buff="0001" and lastType=RECORD_DATA then
-					leave_lvp_mode()
-
-					#if PLATFORM_TYPE_32
-						icsp_delay_in_ms(1)
-					#else
-						icsp_delay_in_ms(10)
-					#endif
-
-					enter_lvp_mode()
-					icsp_cmd_send(cmd_load_config)
-					tmp=icsp_normal_read()
-
-					'USER ID
+			if buff="0001" and lastType=RECORD_DATA then
+				while  pcaddr mod 32<>0
+					icsp_program_send("FF3F")
+					if pcaddr mod 31=0 then
+						icsp_cmd_send(cmd_begin_inter_prg)
+						icsp_delay_in_ms(3)
+						exit while
+					end if
+					pcaddr=pcaddr+1
 					icsp_cmd_send(cmd_increment_addr)
-					icsp_cmd_send(cmd_increment_addr)
-					icsp_cmd_send(cmd_increment_addr)
-					icsp_cmd_send(cmd_increment_addr)
+				wend
 
-					'PRESERVE
-					icsp_cmd_send(cmd_increment_addr)
-					icsp_cmd_send(cmd_increment_addr)
+				leave_lvp_mode()
+				icsp_delay_in_ms(10)
+				enter_lvp_mode()
+				icsp_cmd_send(cmd_load_config)
+				tmp=icsp_normal_read()
 
-					'Device ID
-					icsp_program_send(dev_id)
-					icsp_cmd_send(cmd_increment_addr)
+				'USER ID
+				s=mid(USER_ID,1,4)
+				icsp_program_send(s)
+				icsp_cmd_send(cmd_begin_inter_prg)
+				icsp_delay_in_ms(3)
+				icsp_cmd_send(cmd_increment_addr)
 
-					datadone=YES
-				end if
+
+				s=mid(USER_ID,5,4)
+				icsp_program_send(s)
+				icsp_cmd_send(cmd_begin_inter_prg)
+				icsp_delay_in_ms(3)
+				icsp_cmd_send(cmd_increment_addr)
+
+				s=mid(USER_ID,9,4)
+				icsp_program_send(s)
+				icsp_cmd_send(cmd_begin_inter_prg)
+				icsp_delay_in_ms(3)
+				icsp_cmd_send(cmd_increment_addr)
+
+				s=mid(USER_ID,13,4)
+				icsp_program_send(s)
+				icsp_cmd_send(cmd_begin_inter_prg)
+				icsp_delay_in_ms(3)
+				icsp_cmd_send(cmd_increment_addr)
+
+
+				icsp_cmd_send(cmd_increment_addr)
+				icsp_cmd_send(cmd_increment_addr)
+
+				'Device ID
+				icsp_program_send(dev_id)
+				icsp_cmd_send(cmd_increment_addr)
+
+				datadone=YES
 			end if
 
 		case RECORD_END_OF_LINE:
 			exit while
 
 		end select
+		goto header_extract
+	wend
+
+	#if ICSP_DEBUG_PRINT=1
+		icsp_debug_print("Verify Program Memory")
+	#endif
+
+	pcaddr=0
+	icsp_cmd_send(cmd_reset_addr)
+	romfile.pointer=1
+	while 1
+		header_extract2:
+		while 1
+			s=romfile.getdata(1)
+			if s=":" then
+				tmp=val(romfile.getdata(1))
+				if tmp=1 then
+					byteCount=16
+				else
+					byteCount=0
+				end if
+				tmp=val(romfile.getdata(1))
+				byteCount=byteCount+tmp
+				addr=val(romfile.getdata(4))
+				recType=val(romfile.getdata(2))
+				buff=romfile.getdata(byteCount*2)
+				fchecksum=romfile.getdata(2)
+				exit while
+			end if
+		wend
+
+		select case recType
+		case RECORD_DATA:
+			for sendCount= 1 to byteCount*2 step 4
+				s=mid(buff,sendCount,4)
+				ss=icsp_program_read()
+				pcaddr=pcaddr+1
+				#if ICSP_DEBUG_PRINT=1
+					icsp_debug_print(ss)
+				#endif
+				if ss<>s then
+					#if ICSP_DEBUG_PRINT=1
+						icsp_debug_print("DATA CHECK ERR.")
+					#endif
+					iscp_download_hex=IS_DATA_CHECK_ERR
+					goto leave
+				end if
+			next sendCount
+
+			'alignment check
+			if byteCount mod 4 <> 0 then
+				pending=pcaddr mod 4
+				while pending >0
+					pending=pending/8
+					ss=icsp_program_read()
+					pcaddr=pcaddr+1
+					if ss<>"FF3F" then
+						#if ICSP_DEBUG_PRINT=1
+							icsp_debug_print("DATA CHECK ERR.")
+						#endif
+						iscp_download_hex=IS_DATA_CHECK_ERR
+						goto leave
+					end if
+				wend
+			end if
+
+		case RECORD_EXTENDED_LINEAR_ADDR_REC:
+			if buff="0001" then
+				'now, we skip the configuration word's check
+				iscp_download_hex=IS_UPLOAD_OK
+				exit while
+			end if
+		
+		case RECORD_END_OF_LINE:
+			iscp_download_hex=IS_UPLOAD_OK
+			#if ICSP_DEBUG_PRINT=1
+				icsp_debug_print("pcaddr:"+hex(pcaddr))
+			#endif
+			iscp_download_hex=IS_UPLOAD_OK
+			exit while
+
+		end select
+		goto header_extract2
 	wend
 
 leave:
 	leave_lvp_mode()
-
-	io.num=icsp_mclr
-	io.enabled=YES
-	io.state=LOW
-	#if PLATFORM_TYPE_32
-		icsp_delay_in_ms(1)
-	#else
-		icsp_delay_in_ms(5)
-	#endif
-	io.state=HIGH
-	#if PLATFORM_TYPE_32
-		icsp_delay_in_ms(1)
-	#else
-		icsp_delay_in_ms(20)
-	#endif
-	io.num=icsp_mclr
-	io.enabled=NO
-
-	if socket=EM1000_LEV then
-		i2c_num=si2c_register("VERIFY",PL_IO_NUM_55,PL_IO_NUM_54,YES)
-		ssi.channel=i2c_num
-		ssi.enabled=NO
-		ssi.baudrate=100
-		ssi.clkmap=PL_IO_NUM_54
-		ssi.dimap=PL_IO_NUM_55
-		ssi.domap=PL_IO_NUM_55
-		ssi.direction=PL_SSI_DIRECTION_LEFT
-		ssi.mode=PL_SSI_MODE_2
-		ssi.zmode=PL_SSI_ZMODE_ENABLED_ON_ZERO
-		ssi.enabled=YES
-	else
-		i2c_num=si2c_register("VERIFY",icsp_sda,icsp_scl,NO)
-	end if
 	
-	si2c_get(i2c_num)
-	
-	if icsp_test(version,dev_type)=OK then
-		iscp_download_hex=IS_UPLOAD_OK
-	else
-		iscp_download_hex=IS_UPLOAD_TEST_FAIL
-	end if
-	si2c_release(i2c_num)
-	exit function
-
-leave_without_test:
-	leave_lvp_mode()
+	test()
 end function
 
 sub icsp_configure_init()
@@ -899,89 +693,65 @@ sub icsp_configure_init()
 	tmp=icsp_normal_read()
 
 	icsp_cmd_send(cmd_bulk_ers_prg_mem)
-	#if PLATFORM_TYPE_32
-		icsp_delay_in_ms(2)
-	#else
-		icsp_delay_in_ms(20)
-	#endif
+	icsp_delay_in_ms(20)
 
 	for tmp=0 to 6
 		icsp_cmd_send(cmd_increment_addr)
 	next tmp
 
 	'now, pc address=8007h
+
 	icsp_program_send("E409")
 	icsp_cmd_send(cmd_begin_inter_prg)
-	#if PLATFORM_TYPE_32
-		icsp_delay_in_ms(1)
-	#else
-		icsp_delay_in_ms(5)
-	#endif
+	icsp_delay_in_ms(5)
 
 	icsp_cmd_send(cmd_increment_addr)
 
 	icsp_program_send("FF3D")
 	icsp_cmd_send(cmd_begin_inter_prg)
-
-	#if PLATFORM_TYPE_32
-		icsp_delay_in_ms(1)
-	#else
-		icsp_delay_in_ms(5)
-	#endif
+	icsp_delay_in_ms(5)
 
 	leave_lvp_mode()
 end sub
 
-function icsp_test(data as string,dev_type as icsp_device)as ok_ng
-	const IR_ADDR_R=&hF1
-	const IR_ADDR_W=&hF0
-	const SRAM_FV=&hC5
-
-	dim i as byte=0
-	dim s as string=""
-
-	icsp_test=NG
-
-	s=""
-	if dev_type=ICSP_DEVICE_DEFAULT then
-		s=pic_get_fw_version()
-		if s<>data then exit function
-	else
-		si2c_start()
-		si2c_write(IR_ADDR_W)
-		si2c_write(SRAM_FV)
-		si2c_stop()
-
-		si2c_start()
-		si2c_write(IR_ADDR_R)
-
-		for i=0 to 14
-			s=s+chr(si2c_read(TRUE))
-		next i
-
-		s=s+chr(si2c_read(FALSE))
-
-		si2c_stop()
-
-		if s<>data then exit function
-	end if
-	icsp_test=OK
-end function
-
 sub icsp_delay_in_ms(value as word)
 	dim ax,bx as word
 
-	#if PLATFORM_TYPE_32
-			sys.timercountms=0
-			while sys.timercountms<value
-			wend
-	#else
-		for ax=0 to value
-			for bx=0 to 5
-			next bx
-		next ax
-	#endif
+	for ax=0 to value
+		for bx=0 to 5
+		next bx
+	next ax
 end sub
+
+function test()as ok_ng
+	dim tmp as string
+	dim i2cnum as byte
+	test=OK
+
+	i2cnum=si2c_register("ICSP",ICSPDAT,ICSPCLK,LOW)
+	si2c_get(i2cnum)
+
+	pic_reg_write(TRISC,chr(&h2f))
+	tmp=pic_reg_read(TRISC,1)
+
+	icsp_delay_in_ms(10)
+	
+	pic_reg_write(TRISC,chr(&h3f))
+	tmp=pic_reg_read(TRISC,1)
+	if tmp<>chr(&h3f) then
+		test=NG
+		goto leave_test
+	end if
+
+	pic_reg_write(TRISC,chr(&h2f))
+	tmp=pic_reg_read(TRISC,1)
+	if tmp<>chr(&h2f) then
+		test=NG
+		goto leave_test
+	end if
+leave_test:
+	si2c_release(i2cnum)
+end function
 
 #if ICSP_DEBUG_PRINT=1
 sub icsp_debug_print(data as string)

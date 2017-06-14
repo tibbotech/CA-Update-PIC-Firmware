@@ -1,9 +1,10 @@
 'DEFINES-------------------------------------------------------------
+#define ICSPDAT PL_IO_NUM_12_RX2
+#define ICSPCLK PL_IO_NUM_13_TX2
+#define MCLR PL_IO_NUM_2
 
 'INCLUDES------------------------------------------------------------
 include "super_i2c.tbh"
-include "ssi\trunk\ssi.tbh"
 include "PIC_HAL.tbh"
 include "ICSP.tbh"
-
 'DECLARATIONS--------------------------------------------------------
