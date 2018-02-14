@@ -1,33 +1,92 @@
 include "global.tbh"
 
+#define BEEP_DIVIDER 21600
+
 const CR_LF=chr(10)+chr(13)
+const BEEP_LONG	="BBB"
+const BEEP_FAIL	="BB-BB-BB"
+const BEEP_SHORT="B"
 
 '====================================================================
 sub on_sys_init()
-	dim state as icsp_status
-	icsp_init()
+	dim uid_1,uid_2,uid_3,uid_4 as word
+	dim dev_id,config_1,config_2 as word
+	dim state as icsp_prog_status
+	dim tmr as word
 
-	sys.debugprint("Attempting to update the firmware of Tibbit #31..."+CR_LF)
-	state=iscp_download_hex()
+	dim need_erase as no_yes
+	dim update_uid as no_yes
 
-	select case state
-	case IS_CANNOT_FOUND_FW_FILE:
-		sys.debugprint("Firmware file not found. Please add the firmware file to this project."+CR_LF)
+	'dim fw as string="GRA_V00_06.hex"		
+	'dim fw as string="Tibbit52_V1.31.HEX"
+	dim fw as string="i2c_1wire_bridge.hex" ' <------- To select your target file
+	'buzzer
+	beep.divider=BEEP_DIVIDER
 
-	case IS_FW_FILE_FORMAT_ERR:
-		sys.debugprint("The format for upload's hex file is incorrect"+CR_LF)
+	need_erase=YES	' <------- Optional
+	update_uid=NO	' <------- Optional
 
-	case IS_DEV_ID_ERR:
-		sys.debugprint("PIC device ID incorrect or device not found"+CR_LF)
+	sys.debugprint("Connect to PIC's Tibbit..."+CR_LF)
 
-	case IS_DATA_CHECK_ERR:
-		sys.debugprint("PIC firmware upload failed"+CR_LF)
+	pat.play("BBB~~",PL_PAT_CANINT)
+	beep.play(BEEP_LONG,PL_BEEP_CANINT)
 
-	case IS_UPLOAD_OK:
-		sys.debugprint("Firmware updated successfully"+CR_LF)
+	tmr=sys.timercount
+	while sys.timercount-tmr <2
+	wend
 
-	case IS_UPLOAD_UNKNOWN:
-		sys.debugprint("Unknow error"+CR_LF)
+	icsp_target_select(SOCKET_1)
+	icsp_get_info(uid_1,uid_2,uid_3,uid_4,dev_id,config_1,config_2)	'Ignore the Revision
+	sys.debugprint("uid_1:"+hex(uid_1)+CR_LF)		' user id 1
+	sys.debugprint("uid_2:"+hex(uid_2)+CR_LF)		' user id 2
+	sys.debugprint("uid_3:"+hex(uid_3)+CR_LF)		' user id 3
+	sys.debugprint("uid_4:"+hex(uid_4)+CR_LF)		' user id 4
+ 	sys.debugprint("dev_id:"+hex(dev_id)+CR_LF) 	' device id
+	sys.debugprint("config 1:"+hex(config_1)+CR_LF)	' config 1
+	sys.debugprint("config 2:"+hex(config_2)+CR_LF)	' config 2
 
-	end select
+	if dev_id=&h2745 or dev_id=&h2743 then goto continue
+	goto err_with_no_tibbit:
+
+continue:
+	if need_erase=YES then
+		icsp_target_erase()
+	end if
+
+	if update_uid=YES then
+		icsp_uid_set(&h3AAA,&h3BBB,&h3CCC,&h3DDD)
+	end if
+
+	state=icsp_download(fw)
+	if state=IPS_CANNOT_FOUND_FW_FILE then goto err_fw_not_found		
+	if state=IPS_FW_FILE_FORMAT_ERR then goto err_fw_format
+	if state=IPS_DATA_CHECK_ERR then goto err_fw_verify
+
+	sys.debugprint("ICSP Program finished"+CR_LF)
+
+	beep.play(BEEP_SHORT,PL_BEEP_CANINT)
+	pat.play("GGG~~",PL_PAT_CANINT)
+
+	tmr=sys.timercount
+	while sys.timercount-tmr <3
+	wend
+	exit sub
+
+err_with_no_tibbit:
+	sys.debugprint("There is no PIC's Tibbit on the TPS socket..."+CR_LF)
+	goto err_halt
+err_fw_not_found:
+	sys.debugprint("CANNOT_FOUND_FW_FILE"+CR_LF)
+	goto err_halt
+err_fw_format:
+	sys.debugprint("FW_FILE_FORMAT_ERR"+CR_LF)
+	goto err_halt
+err_fw_verify:
+	sys.debugprint("DATA_CHECK_ERR"+CR_LF)
+err_halt:
+	beep.play(BEEP_FAIL,PL_BEEP_CANINT)
+	pat.play("RRR~~",PL_PAT_CANINT)
+	tmr=sys.timercount
+	while sys.timercount-tmr <2
+	wend
 end sub

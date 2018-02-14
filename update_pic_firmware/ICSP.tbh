@@ -1,29 +1,46 @@
 'DEFINES-------------------------------------------------------------
-#ifndef ICSPDAT
-	#define ICSPDAT PL_IO_NULL
+#ifndef _ICSP_
+#define _ICSP_
+#ifndef USR_SCL
+	#define USR_SCL PL_IO_NULL
 #endif
 
-#ifndef ICSPCLK
-	#define ICSPCLK PL_IO_NULL
+#ifndef USR_SDA
+	#define USR_SDA PL_IO_NULL
 #endif
 
-#ifndef MCLR
-	#define MCLR PL_IO_NULL
+#ifndef USR_MCLR
+	#define USR_MCLR PL_IO_NULL
 #endif
 
-const FW_FILE="test.hex"
-
-enum icsp_status
-	IS_CANNOT_FOUND_FW_FILE
-	IS_FW_FILE_FORMAT_ERR
-	IS_DEV_ID_ERR
-	IS_DATA_CHECK_ERR
-	IS_UPLOAD_OK
-	IS_UPLOAD_UNKNOWN
+enum icsp_prog_status
+	IPS_UPLOAD_OK,
+	IPS_CANNOT_FOUND_FW_FILE,
+	IPS_FW_FILE_FORMAT_ERR,
+	IPS_DATA_CHECK_ERR
 end enum
-'INCLUDES------------------------------------------------------------
+
+enum tibbit_sockets
+	SOCKET_1,
+	SOCKET_3,
+	SOCKET_5,
+	SOCKET_7,
+	SOCKET_9,
+	SOCKET_11,
+	SOCKET_13,
+	SOCKET_15,
+	SOCKET_17,
+	SOCKET_19,
+	SOCKET_21,
+	EM1000_LEV,
+	USER_DEF
+end enum
 
 'DECLARATIONS--------------------------------------------------------
-
-declare sub icsp_init()
-declare function iscp_download_hex()as icsp_status
+declare sub icsp_target_select(socket as tibbit_sockets)
+declare sub icsp_get_info(byref uid_1 as word, byref uid_2 as word, byref uid_3 as word, byref uid_4 as word, byref device_id as word,byref config_1 as word, byref config_2 as word)
+declare function icsp_uid_set(uid_1 as word, uid_2 as word, uid_3 as word, uid_4 as word)as ok_ng
+declare sub icsp_target_erase()
+declare sub icsp_target_reset()
+declare function icsp_download(fw as string)as icsp_prog_status
+#endif
